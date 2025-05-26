@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: directory
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -h localhost -p 5432 -U user -d directory" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    depends_on:
+      - db              # без conditions, просто порядок создания
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+        echo 'Waiting for Postgres…' &&
+        until pg_isready -h db -p 5432 -U user; do
+          sleep 1
+        done &&
+        echo 'Postgres is up, applying migrations…' &&
+        alembic upgrade head &&
+        echo 'Loading fixtures…' &&
+        python -m app.fixtures &&
+        echo 'Starting Uvicorn…' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
+volumes:
+  pgdata:
